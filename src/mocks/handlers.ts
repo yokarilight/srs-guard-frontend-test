@@ -1,13 +1,17 @@
 import {
   changePasswordSchema,
+  createRoleSchema,
   createTopicSchema,
   createUserSchema,
+  generateDocumentsSchema,
   loginSchema,
   topicScopes,
+  updateRoleSchema,
   updateTopicSchema,
   updateMeSchema,
   updateUserSchema,
   type ApiErrorBody,
+  type Role,
   type RevisionSummary,
   type TopicDetail,
   type TopicScope,
@@ -49,13 +53,47 @@ function requireAdmin() {
   return auth
 }
 
-function toRevisionSummary({ topicId: _topicId, ...revision }: MockRevision): RevisionSummary {
+function toRevisionSummary({ topicId: _topicId, generateFinishAt: _finishAt, ...revision }: MockRevision): RevisionSummary {
   return revision
+}
+
+/** 模擬背景任務：產生文件的時間到了就標為已完成（實際文件內容在 F6 實作） */
+function settleGenerating(revision: MockRevision) {
+  if (revision.status !== 'generating' || !revision.generateFinishAt || revision.generateFinishAt > Date.now()) return
+  revision.status = 'completed'
+  delete revision.generateFinishAt
+  const topic = db.topics.find((t) => t.id === revision.topicId)
+  if (topic) topic.updatedAt = new Date().toISOString()
+  persist()
 }
 
 /** 該主題的所有版本，新到舊 */
 function revisionsOf(topicId: string) {
-  return db.revisions.filter((r) => r.topicId === topicId).sort((a, b) => b.version - a.version)
+  const revisions = db.revisions.filter((r) => r.topicId === topicId).sort((a, b) => b.version - a.version)
+  revisions.forEach(settleGenerating)
+  return revisions
+}
+
+/** 自訂角色只限管理者修改，預設角色不可修改或刪除 */
+function findCustomRole(roleId: unknown) {
+  const role = db.roles.find((r) => r.id === roleId)
+  if (!role) return { role: null, response: error(404, '角色不存在') }
+  if (role.isBuiltIn) return { role: null, response: error(403, '預設角色無法修改或刪除') }
+  return { role, response: null }
+}
+
+/** 角色名稱不分大小寫不可重複（含預設角色） */
+function isRoleNameTaken(name: string, exceptId?: string) {
+  const normalized = name.toLowerCase()
+  return db.roles.some((r) => r.id !== exceptId && r.name.toLowerCase() === normalized)
+}
+
+/** 有人設為「我的角色」或有版本選擇產出此角色時，視為使用中 */
+function roleUsage(roleId: string) {
+  return {
+    users: db.users.filter((u) => u.preferredRoleId === roleId).length,
+    revisions: db.revisions.filter((r) => r.selectedRoleIds.includes(roleId)).length,
+  }
 }
 
 function toTopicSummary({ ownerId, ...topic }: MockTopic): TopicSummary {
@@ -144,6 +182,51 @@ export const handlers = [
     const { user, response } = requireUser()
     if (!user) return response
     return HttpResponse.json({ roles: db.roles })
+  }),
+
+  http.post('/api/roles', async ({ request }) => {
+    const { user, response } = requireAdmin()
+    if (!user) return response
+    const body = await parseBody(request, createRoleSchema)
+    if (!body.data) return body.response
+    if (isRoleNameTaken(body.data.name)) return error(409, '已有相同名稱的角色')
+    const id = crypto.randomUUID()
+    const role: Role = { ...body.data, id: `r-${id}`, key: `custom-${id}`, isBuiltIn: false }
+    db.roles.push(role)
+    persist()
+    return HttpResponse.json({ role }, { status: 201 })
+  }),
+
+  http.patch('/api/roles/:roleId', async ({ request, params }) => {
+    const { user, response } = requireAdmin()
+    if (!user) return response
+    const body = await parseBody(request, updateRoleSchema)
+    if (!body.data) return body.response
+    const { role, response: denied } = findCustomRole(params.roleId)
+    if (!role) return denied
+    if (body.data.name && isRoleNameTaken(body.data.name, role.id)) return error(409, '已有相同名稱的角色')
+    Object.assign(role, body.data)
+    persist()
+    return HttpResponse.json({ role })
+  }),
+
+  http.delete('/api/roles/:roleId', async ({ params }) => {
+    const { user, response } = requireAdmin()
+    if (!user) return response
+    const { role, response: denied } = findCustomRole(params.roleId)
+    if (!role) return denied
+    const usage = roleUsage(role.id)
+    if (usage.users > 0 || usage.revisions > 0) {
+      const reasons = [
+        usage.users > 0 && `${usage.users} 位使用者設為「我的角色」`,
+        usage.revisions > 0 && `${usage.revisions} 個版本已選擇產出此角色`,
+      ].filter(Boolean)
+      return error(409, `此角色使用中（${reasons.join('、')}），無法刪除`)
+    }
+    await delay(200)
+    db.roles = db.roles.filter((r) => r.id !== role.id)
+    persist()
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.get('/api/users', () => {
@@ -235,6 +318,35 @@ export const handlers = [
     Object.assign(topic, body.data, { updatedAt: new Date().toISOString() })
     persist()
     return HttpResponse.json({ topic: toTopicDetail(topic) })
+  }),
+
+  // F5-3：勾選角色並開始產生文件（文件內容在 F6 實作，這裡只模擬狀態變化）
+  http.post('/api/revisions/:revisionId/generate', async ({ request, params }) => {
+    const { user, response } = requireUser()
+    if (!user) return response
+    const body = await parseBody(request, generateDocumentsSchema)
+    if (!body.data) return body.response
+    const revision = db.revisions.find((r) => r.id === params.revisionId)
+    if (!revision) return error(404, '版本不存在')
+    const { topic, response: denied } = findOwnTopic(revision.topicId, user.id)
+    if (!topic) return denied
+    if (revisionsOf(topic.id)[0]?.id !== revision.id) return error(409, '只能在最新版本產生文件')
+    const canGenerate =
+      revision.status === 'clarified' || (revision.status === 'failed' && revision.failedStage === 'generate')
+    if (!canGenerate) return error(409, '此版本目前無法產生文件')
+    const roleIds = [...new Set(body.data.roleIds)]
+    if (roleIds.some((id) => !db.roles.some((r) => r.id === id))) return error(400, '角色不存在')
+
+    await delay(300)
+    Object.assign(revision, {
+      status: 'generating',
+      failedStage: null,
+      selectedRoleIds: roleIds,
+      generateFinishAt: Date.now() + 5000,
+    })
+    topic.updatedAt = new Date().toISOString()
+    persist()
+    return HttpResponse.json({ revision: toRevisionSummary(revision) }, { status: 202 })
   }),
 
   // 連同所有版本與檔案一併刪除

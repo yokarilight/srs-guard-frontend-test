@@ -1,5 +1,7 @@
 import type {
   CreateTopicInput,
+  GenerateDocumentsInput,
+  RevisionResponse,
   TopicResponse,
   TopicScope,
   TopicsResponse,
@@ -19,10 +21,15 @@ export function useTopics(scope: TopicScope) {
   })
 }
 
+/** 背景任務進行中時輪詢狀態（之後改為 SSE） */
+const POLL_INTERVAL_MS = 2000
+
 export function useTopic(topicId: string) {
   return useQuery({
     queryKey: topicDetailKey(topicId),
     queryFn: async () => (await api<TopicResponse>(`/topics/${topicId}`)).topic,
+    refetchInterval: (query) =>
+      query.state.data?.currentRevision?.status === 'generating' ? POLL_INTERVAL_MS : false,
   })
 }
 
@@ -59,3 +66,17 @@ export function useDeleteTopic(topicId: string) {
   })
 }
 
+
+/** F5-3：勾選角色並開始產生文件 */
+export function useGenerateDocuments(topicId: string, revisionId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: GenerateDocumentsInput) =>
+      (await api<RevisionResponse>(`/revisions/${revisionId}/generate`, { method: 'POST', body: input })).revision,
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: topicDetailKey(topicId) }),
+        queryClient.invalidateQueries({ queryKey: [...topicsQueryKey, 'list'] }),
+      ]),
+  })
+}

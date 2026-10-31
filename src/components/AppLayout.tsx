@@ -23,6 +23,7 @@ export function AppLayout() {
           <NavLink to="/" end className={({ isActive }) => (isActive || inTopic ? 'active' : undefined)}>
             主題
           </NavLink>
+          <NavLink to="/roles">角色</NavLink>
           {user.role === 'admin' && <NavLink to="/admin/users">使用者管理</NavLink>}
         </nav>
         <div className="app-user">

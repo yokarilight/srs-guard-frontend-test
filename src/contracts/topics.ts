@@ -24,6 +24,8 @@ export interface RevisionSummary {
   version: number
   status: RevisionStatus
   failedStage: FailedStage | null
+  /** 此版本勾選要產出的角色（F5-3）；尚未產生過文件時為空陣列 */
+  selectedRoleIds: string[]
   createdAt: string
 }
 
@@ -88,4 +90,14 @@ export interface TopicsResponse {
 
 export interface TopicResponse {
   topic: TopicDetail
+}
+
+/** POST /api/revisions/:revisionId/generate（僅建立者，最新版本且狀態為釐清完成或產出失敗） */
+export const generateDocumentsSchema = z.object({
+  roleIds: z.array(z.string().min(1)).min(1, '請至少選擇一個角色'),
+})
+export type GenerateDocumentsInput = z.infer<typeof generateDocumentsSchema>
+
+export interface RevisionResponse {
+  revision: RevisionSummary
 }

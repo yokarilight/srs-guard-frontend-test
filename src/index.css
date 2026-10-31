@@ -520,6 +520,116 @@ a {
   margin-bottom: 0;
 }
 
+/* Roles */
+.page > .section-title {
+  margin: 8px 0 0;
+}
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.role-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.role-card > * {
+  margin: 0;
+}
+.role-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.role-card-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+.role-card-header .row-actions {
+  margin-left: auto;
+}
+.role-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.role-card .muted.small {
+  margin: 0 0 4px;
+}
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chip {
+  padding: 1px 8px;
+  font-size: 13px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.role-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: none;
+}
+.role-options-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.role-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.role-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.role-option input {
+  margin-top: 5px;
+  accent-color: var(--accent);
+}
+.role-option-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--text-h);
+}
+.role-option-description {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* Dialog */
 .dialog {
   width: min(440px, calc(100vw - 32px));

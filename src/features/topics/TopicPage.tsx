@@ -6,6 +6,7 @@ import { dateTimeFormat } from '../../lib/format.ts'
 import { useCurrentUser } from '../auth/hooks.ts'
 import { useTopic } from './api.ts'
 import { DeleteTopicDialog } from './DeleteTopicDialog.tsx'
+import { GenerateStep } from './GenerateStep.tsx'
 import {
   currentStepOf,
   isTopicStep,
@@ -24,7 +25,7 @@ const stepStateLabels: Record<StepState, string> = {
   locked: '尚未解鎖',
 }
 
-/** 各步驟的內容在 F2–F6 實作，目前先說明此步驟要做什麼 */
+/** 各步驟的內容在 F2–F4 實作，目前先說明此步驟要做什麼；產出步驟見 GenerateStep */
 const stepDescriptions: Record<TopicStep, { title: string; body: string; feature: string }> = {
   upload: {
     title: '上傳 SRS 與 Figma',
@@ -203,11 +204,15 @@ export function TopicPage() {
         <p className={`alert ${statusMessage.className}`}>{statusMessage.text}</p>
       )}
 
-      <div className="card card-wide">
-        <h2>{description.title}</h2>
-        <p>{description.body}</p>
-        <p className="muted small">此步驟的功能（{description.feature}）開發中。</p>
-      </div>
+      {step === 'generate' && revision ? (
+        <GenerateStep key={revision.id} topicId={data.id} revision={revision} canOperate={isOwner && isLatest} />
+      ) : (
+        <div className="card card-wide">
+          <h2>{description.title}</h2>
+          <p>{description.body}</p>
+          <p className="muted small">此步驟的功能（{description.feature}）開發中。</p>
+        </div>
+      )}
 
       <TopicFormDialog open={editing} topic={data} onClose={() => setEditing(false)} />
       <DeleteTopicDialog open={deleting} topic={data} onClose={() => setDeleting(false)} />

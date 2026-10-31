@@ -3,6 +3,7 @@ import { AppLayout } from './components/AppLayout.tsx'
 import { LoginPage } from './features/auth/LoginPage.tsx'
 import { RequireAdmin } from './features/auth/RequireAdmin.tsx'
 import { RequireAuth } from './features/auth/RequireAuth.tsx'
+import { RolesPage } from './features/roles/RolesPage.tsx'
 import { SettingsPage } from './features/settings/SettingsPage.tsx'
 import { TopicPage } from './features/topics/TopicPage.tsx'
 import { TopicsPage } from './features/topics/TopicsPage.tsx'
@@ -19,6 +20,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <TopicsPage /> },
           { path: 'topics/:topicId', element: <TopicPage /> },
+          { path: 'roles', element: <RolesPage /> },
           { path: 'settings', element: <SettingsPage /> },
           {
             path: 'admin',
