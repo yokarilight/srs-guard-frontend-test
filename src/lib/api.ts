@@ -23,19 +23,21 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  /** 一般物件以 JSON 送出；FormData 以 multipart 送出（由瀏覽器設定 boundary） */
   body?: unknown
   /** 401 不視為 Session 逾時（登入、取得目前使用者） */
   skipUnauthorizedHandler?: boolean
 }
 
-export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function request(path: string, options: RequestOptions): Promise<Response> {
   const { method = 'GET', body, skipUnauthorizedHandler = false } = options
+  const isForm = body instanceof FormData
   const res = await fetch(`/api${path}`, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined || isForm ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   })
 
   if (!res.ok) {
@@ -43,7 +45,16 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     if (res.status === 401 && !skipUnauthorizedHandler) onUnauthorized?.()
     throw new ApiError(res.status, errorBody)
   }
+  return res
+}
 
+export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const res = await request(path, options)
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
+}
+
+/** 取得二進位內容（PDF、截圖） */
+export async function apiBlob(path: string): Promise<Blob> {
+  return (await request(path, {})).blob()
 }

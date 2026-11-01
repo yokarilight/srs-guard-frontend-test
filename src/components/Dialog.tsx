@@ -5,9 +5,11 @@ interface DialogProps {
   title: string
   onClose: () => void
   children: ReactNode
+  /** 較寬的對話框（例如圖片預覽） */
+  wide?: boolean
 }
 
-export function Dialog({ open, title, onClose, children }: DialogProps) {
+export function Dialog({ open, title, onClose, children, wide = false }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export function Dialog({ open, title, onClose, children }: DialogProps) {
   }, [open])
 
   return (
-    <dialog ref={ref} className="dialog" onClose={onClose} aria-labelledby="dialog-title">
+    <dialog ref={ref} className={wide ? 'dialog dialog-wide' : 'dialog'} onClose={onClose} aria-labelledby="dialog-title">
       {open && (
         <>
           <h2 id="dialog-title">{title}</h2>

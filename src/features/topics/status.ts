@@ -70,3 +70,11 @@ export function stepStateOf(step: TopicStep, revision: RevisionSummary | null): 
   if (revision?.status === 'completed') return 'done'
   return 'current'
 }
+
+/** 主題頁網址帶 ?new=1 時直接展開建立新版本的表單（頁首「建立新版本」按鈕） */
+export const NEW_REVISION_PARAM = 'new'
+
+/** AI 背景任務進行中，不能建立新版本 */
+export function isRevisionBusy(status: RevisionStatus) {
+  return status === 'reviewing' || status === 'generating'
+}

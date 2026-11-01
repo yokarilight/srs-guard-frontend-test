@@ -1,4 +1,6 @@
-import type { FailedStage, RevisionStatus, Role, User } from '../contracts/index.ts'
+import type { FailedStage, FigmaLink, FigmaScreen, RevisionStatus, Role, SrsFile, User } from '../contracts/index.ts'
+import { clearFiles } from './fileStore.ts'
+import { createSamplePdf } from './samplePdf.ts'
 
 /** 開發用的假資料庫，存在 localStorage，重新整理後仍保留 */
 interface MockUser extends User {
@@ -21,6 +23,11 @@ export interface MockRevision {
   status: RevisionStatus
   failedStage: FailedStage | null
   selectedRoleIds: string[]
+  srs: SrsFile
+  figmaScreens: FigmaScreen[]
+  figmaLinks: FigmaLink[]
+  /** 模擬背景任務：審查中的版本在此時間後進入待釐清 */
+  reviewFinishAt?: number
   /** 模擬背景任務：文件產生中的版本在此時間後視為完成 */
   generateFinishAt?: number
   createdAt: string
@@ -102,6 +109,46 @@ const customRoles: Role[] = [
   },
 ]
 
+/** 預設假資料的 SRS：檔案內容不存 IndexedDB，取用時才產生（見 sampleFileOf） */
+const sampleSrsFiles: Record<string, { title: string; fileName: string; pageCount: number }> = {
+  'rev-mc-1': { title: 'Member Center Revamp SRS v1', fileName: '會員中心改版-SRS-v1.pdf', pageCount: 12 },
+  'rev-mc-2': { title: 'Member Center Revamp SRS v2', fileName: '會員中心改版-SRS-v2.pdf', pageCount: 14 },
+  'rev-oe-1': { title: 'Order Export SRS', fileName: '訂單匯出-SRS.pdf', pageCount: 6 },
+  'rev-rd-1': { title: 'Report Dashboard SRS', fileName: '營運報表儀表板-SRS.pdf', pageCount: 9 },
+  'rev-cp-1': { title: 'Coupon Campaign SRS', fileName: '優惠券活動頁-SRS.pdf', pageCount: 4 },
+}
+const fallbackSample = { title: 'Sample SRS', fileName: 'SRS.pdf', pageCount: 3 }
+const SAMPLE_FILE_PREFIX = 'sample-'
+
+function sampleSrs(revisionId: string, uploadedAt: string): SrsFile {
+  const sample = sampleSrsFiles[revisionId] ?? fallbackSample
+  return {
+    id: `${SAMPLE_FILE_PREFIX}${revisionId}`,
+    fileName: sample.fileName,
+    contentType: 'application/pdf',
+    size: createSamplePdf(sample.title, sample.pageCount).size,
+    pageCount: sample.pageCount,
+    uploadedAt,
+  }
+}
+
+/** 預設假資料的檔案依版本即時產生；不是假資料的檔案回傳 undefined */
+export function sampleFileOf(fileId: string) {
+  if (!fileId.startsWith(SAMPLE_FILE_PREFIX)) return undefined
+  const sample = sampleSrsFiles[fileId.slice(SAMPLE_FILE_PREFIX.length)] ?? fallbackSample
+  return createSamplePdf(sample.title, sample.pageCount)
+}
+
+type SeedRevision = Omit<MockRevision, 'srs' | 'figmaScreens' | 'figmaLinks'> & Partial<Pick<MockRevision, 'figmaLinks'>>
+
+function seedRevision(revision: SeedRevision): MockRevision {
+  return { figmaScreens: [], figmaLinks: [], ...revision, srs: sampleSrs(revision.id, revision.createdAt) }
+}
+
+function seedLink(id: string, label: string, createdAt: string): FigmaLink {
+  return { id, url: `https://www.figma.com/design/${id}/sample`, label, createdAt }
+}
+
 function seed(): MockDb {
   const now = new Date().toISOString()
   return {
@@ -171,18 +218,28 @@ function seed(): MockDb {
       },
     ],
     revisions: [
-      {
+      seedRevision({
         id: 'rev-mc-1',
         topicId: 't-member-center',
         version: 1,
         status: 'completed',
         failedStage: null,
         selectedRoleIds: ['r-frontend', 'r-backend', 'r-qa', 'r-manager', 'r-designer'],
+        figmaLinks: [seedLink('mc-v1', '會員中心 v1 設計稿', daysAgo(10))],
         createdAt: daysAgo(10),
-      },
-      { id: 'rev-mc-2', topicId: 't-member-center', version: 2, status: 'clarifying', failedStage: null, selectedRoleIds: [], createdAt: daysAgo(2) },
-      { id: 'rev-oe-1', topicId: 't-order-export', version: 1, status: 'reviewing', failedStage: null, selectedRoleIds: [], createdAt: daysAgo(0.1) },
-      {
+      }),
+      seedRevision({
+        id: 'rev-mc-2',
+        topicId: 't-member-center',
+        version: 2,
+        status: 'clarifying',
+        failedStage: null,
+        selectedRoleIds: [],
+        figmaLinks: [seedLink('mc-v2', '會員中心 v2 設計稿', daysAgo(2))],
+        createdAt: daysAgo(2),
+      }),
+      seedRevision({ id: 'rev-oe-1', topicId: 't-order-export', version: 1, status: 'reviewing', failedStage: null, selectedRoleIds: [], createdAt: daysAgo(0.1) }),
+      seedRevision({
         id: 'rev-rd-1',
         topicId: 't-report-dashboard',
         version: 1,
@@ -190,8 +247,8 @@ function seed(): MockDb {
         failedStage: 'generate',
         selectedRoleIds: ['r-frontend', 'r-backend', 'r-qa'],
         createdAt: daysAgo(6),
-      },
-      { id: 'rev-cp-1', topicId: 't-coupon-page', version: 1, status: 'clarified', failedStage: null, selectedRoleIds: [], createdAt: daysAgo(4) },
+      }),
+      seedRevision({ id: 'rev-cp-1', topicId: 't-coupon-page', version: 1, status: 'clarified', failedStage: null, selectedRoleIds: [], createdAt: daysAgo(4) }),
     ],
   }
 }
@@ -202,13 +259,20 @@ export const db: MockDb = (() => {
     // 舊版假資料沒有的 collection 用預設值補上
     if (saved) {
       const merged: MockDb = { ...seed(), ...(JSON.parse(saved) as Partial<MockDb>) }
-      // 舊版假資料的版本沒有 selectedRoleIds
-      for (const revision of merged.revisions) revision.selectedRoleIds ??= []
+      // 舊版假資料的版本沒有 selectedRoleIds、SRS 與 Figma 欄位
+      for (const revision of merged.revisions) {
+        revision.selectedRoleIds ??= []
+        revision.srs ??= sampleSrs(revision.id, revision.createdAt)
+        revision.figmaScreens ??= []
+        revision.figmaLinks ??= []
+      }
       return merged
     }
   } catch {
     // 資料損毀就重新建立
   }
+  // 重新建立假資料時，一併清掉上次留下的檔案
+  void clearFiles()
   return seed()
 })()
 

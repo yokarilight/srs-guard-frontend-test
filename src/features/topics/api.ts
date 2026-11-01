@@ -28,8 +28,10 @@ export function useTopic(topicId: string) {
   return useQuery({
     queryKey: topicDetailKey(topicId),
     queryFn: async () => (await api<TopicResponse>(`/topics/${topicId}`)).topic,
-    refetchInterval: (query) =>
-      query.state.data?.currentRevision?.status === 'generating' ? POLL_INTERVAL_MS : false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.currentRevision?.status
+      return status === 'reviewing' || status === 'generating' ? POLL_INTERVAL_MS : false
+    },
   })
 }
 

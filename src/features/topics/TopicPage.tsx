@@ -9,7 +9,9 @@ import { DeleteTopicDialog } from './DeleteTopicDialog.tsx'
 import { GenerateStep } from './GenerateStep.tsx'
 import {
   currentStepOf,
+  isRevisionBusy,
   isTopicStep,
+  NEW_REVISION_PARAM,
   statusBadge,
   stepStateOf,
   topicSteps,
@@ -17,6 +19,7 @@ import {
   type TopicStep,
 } from './status.ts'
 import { TopicFormDialog } from './TopicFormDialog.tsx'
+import { UploadStep } from './upload/UploadStep.tsx'
 
 const stepStateLabels: Record<StepState, string> = {
   done: '已完成',
@@ -25,13 +28,8 @@ const stepStateLabels: Record<StepState, string> = {
   locked: '尚未解鎖',
 }
 
-/** 各步驟的內容在 F2–F4 實作，目前先說明此步驟要做什麼；產出步驟見 GenerateStep */
-const stepDescriptions: Record<TopicStep, { title: string; body: string; feature: string }> = {
-  upload: {
-    title: '上傳 SRS 與 Figma',
-    body: '上傳 SRS PDF（30 頁、20 MB 以內），可附上 Figma 截圖與連結，至少需有 SRS 才能開始審查。',
-    feature: 'F2 輸入上傳',
-  },
+/** 審查、釐清步驟的內容在 F3–F4 實作，目前先說明此步驟要做什麼；上傳見 UploadStep、產出見 GenerateStep */
+const stepDescriptions: Record<Exclude<TopicStep, 'upload' | 'generate'>, { title: string; body: string; feature: string }> = {
   review: {
     title: 'AI 審查',
     body: 'AI 審查 SRS 內部的缺漏與矛盾，以及 SRS 與 Figma 之間的落差，產出問題清單。',
@@ -41,11 +39,6 @@ const stepDescriptions: Record<TopicStep, { title: string; body: string; feature
     title: '逐項釐清',
     body: '針對每個問題與 AI 對話釐清，或標記為接受現狀、不適用；全部處理完才能產出文件。',
     feature: 'F4 釐清互動',
-  },
-  generate: {
-    title: '產出角色文件',
-    body: '勾選要產出的角色，依 SRS、Figma 與釐清結論產生各角色的 markdown 文件。',
-    feature: 'F5 角色管理、F6 角色文件產出',
   },
 }
 
@@ -118,7 +111,6 @@ export function TopicPage() {
     revision?.status === 'failed'
       ? { text: failedMessage(revision), className: 'alert-error' }
       : revision && statusMessages[revision.status]
-  const description = stepDescriptions[step]
 
   return (
     <section className="page">
@@ -163,7 +155,7 @@ export function TopicPage() {
             value={revision?.version}
             onChange={(e) => {
               const version = Number(e.target.value)
-              updateParams({ v: version === data.currentRevision?.version ? null : String(version), step: null })
+              updateParams({ v: version === data.currentRevision?.version ? null : String(version), step: null, [NEW_REVISION_PARAM]: null })
             }}
           >
             {data.revisions.map((r) => (
@@ -174,6 +166,19 @@ export function TopicPage() {
             ))}
           </select>
           {!isLatest && <span className="badge badge-muted">舊版本（唯讀）</span>}
+          {/* F7-1：最新版本已開始審查且沒有進行中的 AI 任務時，可建立新版本 */}
+          {isOwner &&
+            data.currentRevision &&
+            data.currentRevision.status !== 'draft' &&
+            !isRevisionBusy(data.currentRevision.status) && (
+              <button
+                type="button"
+                className="btn btn-small toolbar-end"
+                onClick={() => updateParams({ v: null, step: 'upload', [NEW_REVISION_PARAM]: '1' })}
+              >
+                建立新版本
+              </button>
+            )}
         </div>
       )}
 
@@ -187,7 +192,9 @@ export function TopicPage() {
                 className={`step step-${state}`}
                 aria-current={step === s.key ? 'step' : undefined}
                 disabled={state === 'locked'}
-                onClick={() => updateParams({ step: s.key === currentStepOf(revision) ? null : s.key })}
+                onClick={() =>
+                  updateParams({ step: s.key === currentStepOf(revision) ? null : s.key, [NEW_REVISION_PARAM]: null })
+                }
               >
                 <span className="step-index">{state === 'done' ? '✓' : state === 'failed' ? '!' : index + 1}</span>
                 <span>
@@ -204,13 +211,17 @@ export function TopicPage() {
         <p className={`alert ${statusMessage.className}`}>{statusMessage.text}</p>
       )}
 
-      {step === 'generate' && revision ? (
-        <GenerateStep key={revision.id} topicId={data.id} revision={revision} canOperate={isOwner && isLatest} />
+      {step === 'upload' ? (
+        <UploadStep topicId={data.id} revision={revision} canOperate={isOwner && isLatest} />
+      ) : step === 'generate' ? (
+        revision && (
+          <GenerateStep key={revision.id} topicId={data.id} revision={revision} canOperate={isOwner && isLatest} />
+        )
       ) : (
         <div className="card card-wide">
-          <h2>{description.title}</h2>
-          <p>{description.body}</p>
-          <p className="muted small">此步驟的功能（{description.feature}）開發中。</p>
+          <h2>{stepDescriptions[step].title}</h2>
+          <p>{stepDescriptions[step].body}</p>
+          <p className="muted small">此步驟的功能（{stepDescriptions[step].feature}）開發中。</p>
         </div>
       )}
 
